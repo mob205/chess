@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1694377558 source:d:\donny\documents\codeblocks projects\chess\main.c
+1694380025 source:d:\donny\documents\codeblocks projects\chess\main.c
 	<stdio.h>
 	<stdlib.h>
 	<string.h>

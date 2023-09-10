@@ -43,8 +43,10 @@ void addPiece(piece temp, piece ***board, int rank, int file, int owner);
 void movePiece(piece ***board, int curRank, int curFile, int targetRank, int targetFile);
 void addPossibleMove(move *moves, int *len, int rank, int file, int flag);
 move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt);
+move *getKnightMoves(int rank, int file, piece ***board, int owner, int *cnt);
 int isValidTile(int rank, int file);
 int isPossibleMove(int rank, int file, move *moves, int cnt, int *flag);
+int isValidEmpty(int rank, int file, piece ***board);
 move getMoveInput();
 void promotePawn(piece ***board, int rank, int file);
 void checkEnPassant(piece ***board, int rank, int file);
@@ -52,10 +54,10 @@ int isEnemyPiece(int rank, int file, int owner, piece ***board);
 void clearstdin();
 //}
 
-// Pieces
+// Definitions for chess piece types
 const piece pieceTypes[] = {
         { Pawn, 'P', 0, 0, &getPawnMoves },
-        { Knight, 'N', 0, 0, 0},
+        { Knight, 'N', 0, 0, &getKnightMoves },
         { Bishop, 'B', 0, 0, 0},
         { Rook, 'R', 0, 0, 0},
         { Queen, 'Q', 0, 0, 0},
@@ -147,7 +149,7 @@ void checkEnPassant(piece ***board, int rank, int file){
 }
 //}
 
-//{ Move validation
+//{ Piece possible moves
 // Returns all possible moves for a pawn to make (and number of possible moves)
 move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt){
     move *possibleMoves = malloc(MAX_MOVES * sizeof(move));
@@ -180,6 +182,34 @@ move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt){
     }
     return possibleMoves;
 }
+
+
+// Returns all possible moves for a knight to make (and number of possible moves)
+move *getKnightMoves(int rank, int file, piece ***board, int owner, int *cnt){
+    move *possibleMoves = malloc(MAX_MOVES * sizeof(move));
+    *cnt = 0;
+    int tarRank, tarFile;
+
+    // Loop through all 8 possible knight L shapes
+    for(int k = 0; k < 2; k++){ // number of L configurations, either 3 vertical/2 horizontal or 2 vertical/3 horizontal
+        for(int i = 0; i < 2; i++){ // first positive rankOffset, then negative
+            for(int j = 0; j < 2; j++){ // first positive fileOffset, then negative
+                tarRank = rank + (2 - k) * (1 - (2 * i));
+                tarFile = file + (1 + k) * (1 - (2 * j));
+                if(isEnemyPiece(tarRank, tarFile, owner, board) || isValidEmpty(tarRank, tarFile, board)){
+                    addPossibleMove(possibleMoves, cnt, tarRank, tarFile, 0);
+                }
+            }
+        }
+    }
+    return possibleMoves;
+}
+//}
+
+//{ Move validation
+
+
+
 // Adds move to a list of possible moves if target tile is on the board
 void addPossibleMove(move *moves, int *len, int rank, int file, int flag){
     if(isValidTile(rank, file)){
@@ -194,6 +224,10 @@ int isValidTile(int rank, int file){
 // Checks if a tile is occupied by an enemy's piece
 int isEnemyPiece(int rank, int file, int owner, piece ***board){
     return(isValidTile(rank, file) && board[rank][file] != NULL && board[rank][file]->owner == (owner + 1) % 2);
+}
+// Checks if a given tile is on the board and unoccupied
+int isValidEmpty(int rank, int file, piece ***board){
+    return(isValidTile(rank, file) && board[rank][file] == NULL);
 }
 // Checks if a move is in a list of possible moves
 int isPossibleMove(int rank, int file, move *moves, int cnt, int* flag){
