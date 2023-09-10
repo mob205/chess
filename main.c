@@ -9,6 +9,7 @@
 #define ENPASSANTER -1
 #define CAN_CASTLE 1
 
+//{ Structs
 typedef enum Type{
     Pawn = 0,
     Knight,
@@ -29,36 +30,48 @@ typedef struct piece{
     int flag;
     move* (*getPossibleMoves)(int rank, int file, struct piece*** board, int owner, int* cnt);
 } piece;
-
+//}
 
 
 // Function prototypes
 //{
+// Piece movement
+void addPiece(piece temp, piece ***board, int rank, int file, int owner);
+void movePiece(piece ***board, int curRank, int curFile, int targetRank, int targetFile);
+void promotePawn(piece ***board, int rank, int file);
+void checkEnPassant(piece ***board, int rank, int file);
+
+// Piece possible moves
+move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt);
+move *getKnightMoves(int rank, int file, piece ***board, int owner, int *cnt);
+move *getBishopMoves(int rank, int file, piece ***board, int owner, int *cnt);
+void addDiagonalMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves);
+
+// Move validation
+void addPossibleMove(move *moves, int *len, int rank, int file, int flag);
+int isValidTile(int rank, int file);
+int isEnemyPiece(int rank, int file, int owner, piece ***board);
+int isValidEmpty(int rank, int file, piece ***board);
+int isPossibleMove(int rank, int file, move *moves, int cnt, int *flag);
+
+// Initialization
 piece ***makeBoard();
+
+// Input/Output
+void readyBoard(piece ***board);
 void printBoard(piece ***board);
 void freeBoard(piece ***board);
 void printLine();
-void readyBoard(piece ***board);
-void addPiece(piece temp, piece ***board, int rank, int file, int owner);
-void movePiece(piece ***board, int curRank, int curFile, int targetRank, int targetFile);
-void addPossibleMove(move *moves, int *len, int rank, int file, int flag);
-move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt);
-move *getKnightMoves(int rank, int file, piece ***board, int owner, int *cnt);
-int isValidTile(int rank, int file);
-int isPossibleMove(int rank, int file, move *moves, int cnt, int *flag);
-int isValidEmpty(int rank, int file, piece ***board);
 move getMoveInput();
-void promotePawn(piece ***board, int rank, int file);
-void checkEnPassant(piece ***board, int rank, int file);
-int isEnemyPiece(int rank, int file, int owner, piece ***board);
 void clearstdin();
+
 //}
 
 // Definitions for chess piece types
 const piece pieceTypes[] = {
         { Pawn, 'P', 0, 0, &getPawnMoves },
         { Knight, 'N', 0, 0, &getKnightMoves },
-        { Bishop, 'B', 0, 0, 0},
+        { Bishop, 'B', 0, 0, &getBishopMoves },
         { Rook, 'R', 0, 0, 0},
         { Queen, 'Q', 0, 0, 0},
         { King, 'K', 0, 1, 0}
@@ -133,8 +146,33 @@ void movePiece(piece ***board, int curRank, int curFile, int targetRank, int tar
 void promotePawn(piece ***board, int rank, int file){
     int owner = board[rank][file]->owner;
     if(board[rank][file]->type == Pawn && ((owner == 0 && rank == 0) || (owner == 1 && rank == BOARD_SIZE - 1))){
-        addPiece(pieceTypes[Queen], board, rank, file, owner);
-        printf("Pawn promoted to Queen.\n");
+        // Get user's choice of promotion
+        printf("What would you like to promote this pawn to? (Q - Queen | R - Rook | B - Bishop | N - Knight)\n");
+        char input;
+        int isValidInput = 0;
+        piece choice;
+        while(isValidInput == 0){
+            scanf("%c", &input);
+            clearstdin();
+            isValidInput = 1;
+            if(input == 'Q'){
+                choice = pieceTypes[Queen];
+                printf("Pawn promoted to Queen.\n");
+            } else if(input == 'R'){
+                choice = pieceTypes[Rook];
+                printf("Pawn promoted to Rook.\n");
+            } else if(input == 'B'){
+                choice = pieceTypes[Bishop];
+                printf("Pawn promoted to Bishop.\n");
+            } else if(input == 'N'){
+                choice = pieceTypes[Knight];
+                printf("Pawn promoted to Knight.\n");
+            } else {
+                isValidInput = 0;
+                printf("Invalid choice.\n");
+            }
+        }
+        addPiece(choice, board, rank, file, owner);
     }
 }
 // Checks for an en passant
@@ -182,8 +220,6 @@ move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt){
     }
     return possibleMoves;
 }
-
-
 // Returns all possible moves for a knight to make (and number of possible moves)
 move *getKnightMoves(int rank, int file, piece ***board, int owner, int *cnt){
     move *possibleMoves = malloc(MAX_MOVES * sizeof(move));
@@ -204,12 +240,34 @@ move *getKnightMoves(int rank, int file, piece ***board, int owner, int *cnt){
     }
     return possibleMoves;
 }
+// Returns all possible moves for a bishop to make
+move *getBishopMoves(int rank, int file, piece ***board, int owner, int *cnt){
+    move *possibleMoves = malloc(MAX_MOVES * sizeof(move));
+    *cnt = 0;
+    addDiagonalMoves(rank, file, board, owner, cnt, possibleMoves);
+    return possibleMoves;
+}
+// Adds all clear diagonal tiles up to (and including) the first opponent piece to an array of possible moves
+void addDiagonalMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves){
+    int rankDir, fileDir;
+    for(int i = 0; i < 2; i++){ // i = 0: diagonals going up | i = 1: diagonals going down
+        for(int j = 0; j < 2; j++){ // j = 0: diagonal going right | j = 1: diagonal going left
+            rankDir = 1 - (2 * i), fileDir = 1 - (2 * j);
+            int tarRank = rank + rankDir, tarFile = file + fileDir;
+
+            // Add move if tile is empty or an enemy, but only if last tile wasn't an enemy (i.e. don't go past first enemy)
+            while((isValidEmpty(tarRank, tarFile, board) || isEnemyPiece(tarRank, tarFile, owner, board))
+                   && !isEnemyPiece(tarRank - rankDir, tarFile - fileDir, owner, board)){
+                addPossibleMove(moves, cnt, tarRank, tarFile, 0);
+                tarRank += rankDir;
+                tarFile += fileDir;
+            }
+        }
+    }
+}
 //}
 
 //{ Move validation
-
-
-
 // Adds move to a list of possible moves if target tile is on the board
 void addPossibleMove(move *moves, int *len, int rank, int file, int flag){
     if(isValidTile(rank, file)){
