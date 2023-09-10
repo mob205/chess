@@ -45,7 +45,10 @@ void checkEnPassant(piece ***board, int rank, int file);
 move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt);
 move *getKnightMoves(int rank, int file, piece ***board, int owner, int *cnt);
 move *getBishopMoves(int rank, int file, piece ***board, int owner, int *cnt);
+move *getRookMoves(int rank, int file, piece ***board, int owner, int *cnt);
+move *getQueenMoves(int rank, int file, piece ***board, int owner, int *cnt);
 void addDiagonalMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves);
+void addStraightMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves);
 
 // Move validation
 void addPossibleMove(move *moves, int *len, int rank, int file, int flag);
@@ -72,8 +75,8 @@ const piece pieceTypes[] = {
         { Pawn, 'P', 0, 0, &getPawnMoves },
         { Knight, 'N', 0, 0, &getKnightMoves },
         { Bishop, 'B', 0, 0, &getBishopMoves },
-        { Rook, 'R', 0, 0, 0},
-        { Queen, 'Q', 0, 0, 0},
+        { Rook, 'R', 0, 0, &getRookMoves },
+        { Queen, 'Q', 0, 0, &getQueenMoves },
         { King, 'K', 0, 1, 0}
 };
 int turn = 1;
@@ -108,7 +111,7 @@ int main()
             } else {
                 printf("Invalid move.\n");
             }
-            free(moves);
+            free(moves);.
         } else if(isValidTile(cur.rank, cur.file) && board[cur.rank][cur.file] != NULL && board[cur.rank][cur.file]->owner == turn % 2){
             printf("You don't own that piece!\n");
         } else {
@@ -247,7 +250,22 @@ move *getBishopMoves(int rank, int file, piece ***board, int owner, int *cnt){
     addDiagonalMoves(rank, file, board, owner, cnt, possibleMoves);
     return possibleMoves;
 }
-// Adds all clear diagonal tiles up to (and including) the first opponent piece to an array of possible moves
+// Returns all possible moves for a rook to make
+move *getRookMoves(int rank, int file, piece ***board, int owner, int *cnt){
+    move *possibleMoves = malloc(MAX_MOVES * sizeof(move));
+    *cnt = 0;
+    addStraightMoves(rank, file, board, owner, cnt, possibleMoves);
+    return possibleMoves;
+}
+// Returns all possible moves for a queen to make
+move *getQueenMoves(int rank, int file, piece ***board, int owner, int *cnt){
+    move *possibleMoves = malloc(MAX_MOVES * sizeof(move));
+    *cnt = 0;
+    addDiagonalMoves(rank, file, board, owner, cnt, possibleMoves);
+    addStraightMoves(rank, file, board, owner, cnt, possibleMoves);
+    return possibleMoves;
+}
+// Adds all clear moves to diagonal tiles up to (and including) the first opponent piece to an array of possible moves
 void addDiagonalMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves){
     int rankDir, fileDir;
     for(int i = 0; i < 2; i++){ // i = 0: diagonals going up | i = 1: diagonals going down
@@ -265,6 +283,33 @@ void addDiagonalMoves(int rank, int file, piece ***board, int owner, int *cnt, m
         }
     }
 }
+// Adds all clear moves to tiles in a straight line up to (and including) the first opponent piece to an array of possible moves
+void addStraightMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves){
+    int rankDir, fileDir;
+    // Iterate through all 4 directions
+    for(int i = 0; i < 4; i++){
+        // Get direction to search in
+        rankDir = 0, fileDir = 0;
+        if(i == 0){
+            rankDir = 1;
+        } else if(i == 1){
+            rankDir = -1;
+        } else if(i == 2){
+            fileDir = 1;
+        } else if(i == 3){
+            fileDir = -1;
+        }
+        int tarRank = rank + rankDir, tarFile = file + fileDir;
+        // Add move if tile is empty or an enemy, but only if the last tile wasn't an enemy (i.e. don't go past first enemy)
+        while((isValidEmpty(tarRank, tarFile, board) || isEnemyPiece(tarRank, tarFile, owner, board))
+                   && !isEnemyPiece(tarRank - rankDir, tarFile - fileDir, owner, board)){
+                addPossibleMove(moves, cnt, tarRank, tarFile, 0);
+                tarRank += rankDir;
+                tarFile += fileDir;
+        }
+    }
+}
+
 //}
 
 //{ Move validation
