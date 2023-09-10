@@ -20,7 +20,7 @@ typedef enum Type{
 typedef struct move{
     int rank;
     int file;
-    int flag;
+    int flag; // Flag denotes the ability to do special moves, namely en passant and castling
 } move;
 typedef struct piece{
     Type type;
@@ -48,6 +48,8 @@ int isPossibleMove(int rank, int file, move *moves, int cnt, int *flag);
 move getMoveInput();
 void promotePawn(piece ***board, int rank, int file);
 void checkEnPassant(piece ***board, int rank, int file);
+int isEnemyPiece(int rank, int file, int owner, piece ***board);
+void clearstdin();
 //}
 
 // Pieces
@@ -63,17 +65,14 @@ int turn = 1;
 
 int main()
 {
-
     piece ***board = makeBoard();
     readyBoard(board);
-
 
     while(1){
         printBoard(board);
         // Get and validate input
         printf("Select a piece to move\n");
         move cur = getMoveInput();
-
 
         // Check if piece is valid
         if(isValidTile(cur.rank, cur.file) && board[cur.rank][cur.file] != NULL && board[cur.rank][cur.file]->owner != turn % 2){
@@ -87,6 +86,7 @@ int main()
             int cnt, flag;
             move *moves = board[cur.rank][cur.file]->getPossibleMoves(cur.rank, cur.file, board, board[cur.rank][cur.file]->owner, &cnt);
             if(isPossibleMove(tar.rank, tar.file, moves, cnt, &flag)){
+                // Carry out move
                 board[cur.rank][cur.file]->flag = flag;
                 movePiece(board, cur.rank, cur.file, tar.rank, tar.file);
                 turn++;
@@ -163,11 +163,11 @@ move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt){
         }
     }
     // Capture right
-    if(board[rank + dir][file + 1] != NULL){
+    if(isEnemyPiece(rank + dir, file + 1, owner, board)){
         addPossibleMove(possibleMoves, cnt, rank + dir, file + 1, 0);
     }
     // Capture left
-    if(board[rank + dir][file - 1] != NULL){
+    if(isEnemyPiece(rank + dir, file - 1, owner, board)){
         addPossibleMove(possibleMoves, cnt, rank + dir, file - 1, 0);
     }
     // EN PASSANT RIGHT
@@ -190,6 +190,10 @@ void addPossibleMove(move *moves, int *len, int rank, int file, int flag){
 // Checks if a given tile is on the board
 int isValidTile(int rank, int file){
     return ((rank < BOARD_SIZE && rank >= 0) && (file < BOARD_SIZE && file >= 0));
+}
+// Checks if a tile is occupied by an enemy's piece
+int isEnemyPiece(int rank, int file, int owner, piece ***board){
+    return(isValidTile(rank, file) && board[rank][file] != NULL && board[rank][file]->owner == (owner + 1) % 2);
 }
 // Checks if a move is in a list of possible moves
 int isPossibleMove(int rank, int file, move *moves, int cnt, int* flag){
@@ -261,15 +265,20 @@ void freeBoard(piece ***board){
 
 //{ Input/Output
 
+// Clears input buffer
+void clearstdin(){
+    char c;
+    while((c = getchar()) != '\n' && c != EOF);
+}
 // Returns a move based on user input in chess notation
 move getMoveInput(){
-    fflush(stdin);
-
     int rawRank;
     char rawFile;
     scanf("%c%d", &rawFile, &rawRank);
     int file = rawFile - 'a', rank = BOARD_SIZE - rawRank;
+    clearstdin();
     return (move) { rank, file, 0 };
+
 }
 // Prints a centered line of ---
 void printLine(){
@@ -303,5 +312,3 @@ void printBoard(piece ***board){
     printf("\n");
 }
 //}
-
-
