@@ -5,9 +5,11 @@
 #define BOARD_SIZE 8
 #define MAX_MOVES 40
 #define UPPER 32
+#define MAX_INPUT 5
 
 #define ENPASSANTER -1
 #define CAN_CASTLE 1
+#define PROMOTED -10
 
 //{ Structs
 typedef enum Type{
@@ -16,13 +18,15 @@ typedef enum Type{
     Bishop,
     Rook,
     Queen,
-    King
+    King,
+    None
 } Type;
 typedef struct move{
     int rank;
     int file;
     int flag; // Flag denotes the ability to do special moves, namely en passant and castling
 } move;
+
 typedef struct piece{
     Type type;
     char rep;
@@ -30,6 +34,14 @@ typedef struct piece{
     int flag;
     move* (*getPossibleMoves)(int rank, int file, struct piece*** board, int owner, int* cnt);
 } piece;
+typedef struct moveRecord{
+    int player;
+    move start;
+    move end;
+    Type captured;
+    move capturedPos;
+    struct moveRecord *next;
+} moveRecord;
 //}
 
 
@@ -37,9 +49,9 @@ typedef struct piece{
 //{
 // Piece movement
 void addPiece(piece temp, piece ***board, int rank, int file, int owner);
-void movePiece(piece ***board, int curRank, int curFile, int targetRank, int targetFile);
+void movePiece(piece ***board, int curRank, int curFile, int targetRank, int targetFile, int flag);
 void promotePawn(piece ***board, int rank, int file);
-void checkEnPassant(piece ***board, int rank, int file);
+move checkEnPassant(piece ***board, int rank, int file, int flag);
 
 // Piece possible moves
 move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt);
@@ -68,6 +80,10 @@ void printLine();
 move getMoveInput();
 void clearstdin();
 
+// Move history
+moveRecord *storeMove(moveRecord *head, move start, move end, Type captured, move capturedPos, int owner);
+moveRecord *undoMove(moveRecord *head, piece ***board);
+
 //}
 
 // Definitions for chess piece types
@@ -75,26 +91,32 @@ const piece pieceTypes[] = {
         { Pawn, 'P', 0, 0, &getPawnMoves },
         { Knight, 'N', 0, 0, &getKnightMoves },
         { Bishop, 'B', 0, 0, &getBishopMoves },
-        { Rook, 'R', 0, 0, &getRookMoves },
+        { Rook, 'R', 0, 1, &getRookMoves },
         { Queen, 'Q', 0, 0, &getQueenMoves },
         { King, 'K', 0, 1, 0}
 };
-int turn = 1;
+int turn = 0;
+moveRecord *moveRecords = NULL;
 
 int main()
 {
     piece ***board = makeBoard();
     readyBoard(board);
-
     while(1){
         printBoard(board);
+
         // Get and validate input
         printf("Select a piece to move\n");
         move cur = getMoveInput();
+        if(cur.file == -1){
+            moveRecords = undoMove(moveRecords, board);
+            continue;
+        }
 
+        piece *selected = board[cur.rank][cur.file];
         // Check if piece is valid
-        if(isValidTile(cur.rank, cur.file) && board[cur.rank][cur.file] != NULL && board[cur.rank][cur.file]->owner != turn % 2){
-            printf("Piece selected: %c\n", board[cur.rank][cur.file]->rep);
+        if(isValidTile(cur.rank, cur.file) && selected != NULL && selected->owner == turn % 2){
+            printf("Piece selected: %c\n", selected->rep);
 
             // Get input and validate
             printf("Where would you like to move this piece to?\n");
@@ -102,17 +124,17 @@ int main()
 
             // Check if move is possible
             int cnt, flag;
-            move *moves = board[cur.rank][cur.file]->getPossibleMoves(cur.rank, cur.file, board, board[cur.rank][cur.file]->owner, &cnt);
+            move *moves = selected->getPossibleMoves(cur.rank, cur.file, board, selected->owner, &cnt);
             if(isPossibleMove(tar.rank, tar.file, moves, cnt, &flag)){
                 // Carry out move
-                board[cur.rank][cur.file]->flag = flag;
-                movePiece(board, cur.rank, cur.file, tar.rank, tar.file);
+                movePiece(board, cur.rank, cur.file, tar.rank, tar.file, flag);
+                board[tar.rank][tar.file]->flag = flag;
                 turn++;
             } else {
                 printf("Invalid move.\n");
             }
-            free(moves);.
-        } else if(isValidTile(cur.rank, cur.file) && board[cur.rank][cur.file] != NULL && board[cur.rank][cur.file]->owner == turn % 2){
+            free(moves);
+        } else if(isValidTile(cur.rank, cur.file) && selected != NULL && selected->owner != turn % 2){
             printf("You don't own that piece!\n");
         } else {
             printf("Piece not found.\n");
@@ -123,7 +145,7 @@ int main()
 }
 
 //{ Piece movement
-// Adds a piece to the board. Does not check for valid moves or piece overlapping
+// Adds a piece to the board
 void addPiece(piece temp, piece ***board, int rank, int file, int owner){
     if(board[rank][file] != NULL){
         free(board[rank][file]);
@@ -134,16 +156,34 @@ void addPiece(piece temp, piece ***board, int rank, int file, int owner){
     board[rank][file] = newPiece;
 }
 // Moves a piece on the board. Does not check for valid moves or piece overlapping.
-void movePiece(piece ***board, int curRank, int curFile, int targetRank, int targetFile){
+// Returns the position of the captured piece, if any
+void movePiece(piece ***board, int curRank, int curFile, int targetRank, int targetFile, int flag){
+    Type capturedType = None;
+    move capturedPos = { -1, -1 };
+
+    // Check for capture
     if(board[targetRank][targetFile] != NULL){
-        printf("Captured enemy %c.\n", board[targetRank][targetFile]->rep);
+        capturedPos = (move) { targetRank, targetFile, board[targetRank][targetFile]->flag };
+        capturedType = board[targetRank][targetFile]->type;
         free(board[targetRank][targetFile]);
     }
+    // Move piece
     board[targetRank][targetFile] = board[curRank][curFile];
     board[curRank][curFile] = NULL;
 
-    checkEnPassant(board, targetRank, targetFile);
+    // Check for en passant
+    move passantPos = checkEnPassant(board, targetRank, targetFile, flag);
+    if(passantPos.rank > -1){
+        capturedPos = passantPos;
+        capturedType = Pawn;
+    }
+    // Check for promotion
     promotePawn(board, targetRank, targetFile);
+
+    // Record move on stack
+    move start =(move) { curRank, curFile, board[targetRank][targetFile]->flag };
+    move end = (move) { targetRank, targetFile, flag };
+    moveRecords = storeMove(moveRecords, start, end, capturedType, capturedPos, board[targetRank][targetFile]->owner);
 }
 // Promotes to piece to a queen if it is an eligible pawn
 void promotePawn(piece ***board, int rank, int file){
@@ -178,15 +218,19 @@ void promotePawn(piece ***board, int rank, int file){
         addPiece(choice, board, rank, file, owner);
     }
 }
-// Checks for an en passant
-void checkEnPassant(piece ***board, int rank, int file){
+// Checks for an en passant. Returns position of en passanted pawn, if there is one
+move checkEnPassant(piece ***board, int rank, int file, int flag){
+    move res = { -1, -1 };
     int owner = board[rank][file]->owner;
     int dir = (owner == 1) ? -1 : 1;
-    if(board[rank][file]->type == Pawn && board[rank][file]->flag == ENPASSANTER){
+    if(board[rank][file]->type == Pawn && flag == ENPASSANTER){
         printf("Captured enemy %c by EN PASSANT!!\n", board[rank + dir][file]->rep);
+        res = (move) { rank + dir, file, board[rank + dir][file]->flag };
         free(board[rank + dir][file]);
         board[rank + dir][file] = NULL;
+
     }
+    return res;
 }
 //}
 
@@ -199,7 +243,12 @@ move *getPawnMoves(int rank, int file, piece ***board, int owner, int *cnt){
 
     // Forward move
     if(board[rank + dir][file] == NULL){
-        addPossibleMove(possibleMoves, cnt, rank + dir, file, 0);
+        // Check for promotion
+        if(rank + dir == 0 || rank + dir == BOARD_SIZE - 1){
+            addPossibleMove(possibleMoves, cnt, rank + dir, file, PROMOTED);
+        } else {
+            addPossibleMove(possibleMoves, cnt, rank + dir, file, 0);
+        }
         // 2-space first move
         if(((owner == 1 && rank == 1) || (owner == 0 && rank == BOARD_SIZE - 2)) && board[rank + (2 * dir)][file] == NULL){
             addPossibleMove(possibleMoves, cnt, rank + (2 * dir), file, turn);
@@ -401,19 +450,30 @@ void freeBoard(piece ***board){
 //}
 
 //{ Input/Output
-
 // Clears input buffer
 void clearstdin(){
-    char c;
-    while((c = getchar()) != '\n' && c != EOF);
+    fseek(stdin, 0, SEEK_END);
+    if(ftell(stdin) > 0){
+        char c;
+        while((c = getchar()) != '\n' && c != EOF);
+    }
 }
 // Returns a move based on user input in chess notation
 move getMoveInput(){
+    // Check for command (currently just UNDO)
+    clearstdin();
+    char input[MAX_INPUT] = { 0 };
+    char cmd[MAX_INPUT] = { 0 };
+    fgets(input, MAX_INPUT * sizeof(char), stdin);
+    sscanf(input, "%s", cmd);
+    if(strcmp(cmd, "UNDO") == 0){
+        return (move) { -1, -1 };
+    }
+
     int rawRank;
     char rawFile;
-    scanf("%c%d", &rawFile, &rawRank);
+    sscanf(input, "%c%d", &rawFile, &rawRank);
     int file = rawFile - 'a', rank = BOARD_SIZE - rawRank;
-    clearstdin();
     return (move) { rank, file, 0 };
 
 }
@@ -447,5 +507,51 @@ void printBoard(piece ***board){
     printf("  ");
     printLine();
     printf("\n");
+}
+//}
+
+//{ Move history
+// Adds a move record to the stack of all moves played in the game
+moveRecord *storeMove(moveRecord *head, move start, move end, Type captured, move capturedPos, int owner){
+    moveRecord *rec = malloc(sizeof(moveRecord));
+    rec->start = start;
+    rec->end = end;
+    rec->captured = captured;
+    rec->capturedPos = capturedPos;
+    printf("Storing move's capture position at: %d %d\n", capturedPos.rank, capturedPos.file);
+    rec->player = owner;
+    rec->next = head;
+    return rec;
+}
+// Undos previous move
+moveRecord *undoMove(moveRecord *head, piece ***board){
+    if(head == NULL){
+        return NULL;
+    }
+    moveRecord *rec = head;
+    // Undo movement
+    board[rec->start.rank][rec->start.file] = board[rec->end.rank][rec->end.file];
+    board[rec->end.rank][rec->end.file] = NULL;
+
+    // Undo pawn promotes
+    if(rec->end.flag == PROMOTED){
+        addPiece(pieceTypes[Pawn], board, rec->start.rank, rec->start.file, rec->player);
+    }
+    // Reset flags
+    board[rec->start.rank][rec->start.file]->flag = rec->start.flag;
+
+    // Undo captures
+
+    if(rec->captured != None){
+        addPiece(pieceTypes[rec->captured], board, rec->capturedPos.rank, rec->capturedPos.file, (rec->player + 1) % 2);
+        board[rec->capturedPos.rank][rec->capturedPos.file]->flag = rec->capturedPos.flag;
+    }
+    turn--;
+    printf("Turn %d: flag of moved piece is %d, flag of captured piece is %d", turn, board[rec->start.rank][rec->start.file]->flag, board[rec->capturedPos.rank][rec->capturedPos.file]->flag);
+
+    // Remove record from stack
+    head = rec->next;
+    free(rec);
+    return head;
 }
 //}
