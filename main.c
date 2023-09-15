@@ -72,7 +72,6 @@ void addStraightMoves(int rank, int file, piece ***board, int owner, int *cnt, m
 
 // Game end conditions
 int isCheck(piece ***board, int rank, int file, int owner);
-int isCheckmate(piece ***board, int owner);
 int hasLegalKingMove(int rank, int file, piece ***board, int owner);
 int isSimulatedCheck(piece ***board, int curRank, int curFile, int tarRank, int tarFile, int owner);
 int isStalemate(piece ***board, int owner);
@@ -151,22 +150,28 @@ int playGame(){
 
         int player = turn % 2;
 
-        if(isCheckmate(board, player)){
-            printf("CHECKMATE! ");
-            res = (player + 1) % 2;
-            continue;
-        } else if(isCheck(board, kingLocs[player].rank, kingLocs[player].file, player)){
+        // Cache if king is in check
+        if(isCheck(board, kingLocs[player].rank, kingLocs[player].file, player)){
             kingLocs[player].flag = 1;
-            printf("CHECK!\n");
-        } else if(isStalemate(board, player)){
-            printf("Stalemate!\n");
-            res = 3;
-            continue;
         } else {
             kingLocs[player].flag = 0;
         }
+        if(isStalemate(board, player)){
+            // The only difference between a stalemate and a checkmate is whether the king is in check
+            if(kingLocs[player].flag == 1){
+                printf("CHECKMATE!  ");
+                res = (player + 1) % 2;
+                continue;
+            }
+            printf("Stalemate!\n");
+            res = 3;
+            continue;
+        }
 
-        printf("Select a piece to move.\n");
+        if(kingLocs[player].flag){
+            printf("CHECK!\n");
+        }
+        printf("%s'S TURN: Select a piece to move.\n", player == 0 ? "WHITE" : "BLACK");
         piece *selected = NULL;
         // Get and validate input
         move cur = getMoveInput();
@@ -237,6 +242,7 @@ void processMove(piece ***board, int curRank, int curFile, int targetRank, int t
     if(board[targetRank][targetFile] != NULL){
         capturedPos = (move) { targetRank, targetFile, board[targetRank][targetFile]->flag };
         capturedType = board[targetRank][targetFile]->type;
+        printf("Captured %c\n", board[targetRank][targetFile]->rep);
         free(board[targetRank][targetFile]);
     }
     // Move piece
@@ -497,15 +503,6 @@ int isCheck(piece ***board, int rank, int file, int owner){
     }
     return 0;
 }
-// Returns 1 if the given player is in checkmate
-int isCheckmate(piece ***board, int owner){
-    int rank = kingLocs[owner].rank, file = kingLocs[owner].file;
-    // Checkmate is not possible if not in check
-    if(!isCheck(board, rank, file, owner)){
-        return 0;
-    }
-    return !hasLegalKingMove(rank, file, board, owner);
-}
 // Returns 1 if the specified king has a valid move
 int hasLegalKingMove(int rank, int file, piece ***board, int owner){
     for(int i = rank - 1; i <= rank + 1; i++){
@@ -561,11 +558,8 @@ int isStalemate(piece ***board, int owner){
                 }
                 free(possibleMoves);
             // Check if ally king has legal moves
-            } else if(isAllyPiece(i, j, owner, board)){
-                int res = hasLegalKingMove(i, j, board, owner);
-                if(res == 1){
-                    return 0;
-                }
+            } else if(isAllyPiece(i, j, owner, board) && hasLegalKingMove(i, j, board, owner)){
+                return 0;
             }
         }
     }
