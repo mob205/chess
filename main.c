@@ -69,14 +69,19 @@ move *getQueenMoves(int rank, int file, piece ***board, int owner, int *cnt);
 move *getKingMoves(int rank, int file, piece ***board, int owner, int *cnt);
 void addDiagonalMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves);
 void addStraightMoves(int rank, int file, piece ***board, int owner, int *cnt, move *moves);
+
+// Game end conditions
 int isCheck(piece ***board, int rank, int file, int owner);
 int isCheckmate(piece ***board, int owner);
+int hasLegalKingMove(int rank, int file, piece ***board, int owner);
 int isSimulatedCheck(piece ***board, int curRank, int curFile, int tarRank, int tarFile, int owner);
+int isStalemate(piece ***board, int owner);
 
 // Move validation
 void addPossibleMove(move *moves, int *len, int rank, int file, int flag);
 int isValidTile(int rank, int file);
 int isEnemyPiece(int rank, int file, int owner, piece ***board);
+int isAllyPiece(int rank, int file, int owner, piece ***board);
 int isValidEmpty(int rank, int file, piece ***board);
 int canCastleRow(int rank, int file, int startFile, int endFile, piece ***board);
 int isPossibleMove(int rank, int file, move *moves, int cnt, int *flag);
@@ -103,9 +108,9 @@ const piece pieceTypes[] = {
         { Pawn, 'P', 0, 0, &getPawnMoves },
         { Knight, 'N', 0, 0, &getKnightMoves },
         { Bishop, 'B', 0, 0, &getBishopMoves },
-        { Rook, 'R', 0, 1, &getRookMoves },
+        { Rook, 'R', 0, CAN_CASTLE, &getRookMoves },
         { Queen, 'Q', 0, 0, &getQueenMoves },
-        { King, 'K', 0, 1, &getKingMoves }
+        { King, 'K', 0, CAN_CASTLE  , &getKingMoves }
 };
 int turn = 0;
 moveRecord *moveRecords = NULL;
@@ -113,10 +118,12 @@ move kingLocs[2];
 
 int main()
 {
+    int scores[2] = { 0 };
     char input;
     printf("Welcome to Chess!\n");
 
     do{
+        printf("White %d - Black %d\n", scores[0], scores[1]);
         printf("A) Play game\n");
         printf("B) Quit\n");
 
@@ -124,7 +131,10 @@ int main()
         input = getchar();
         if(input == 'A'){
             int res = playGame();
-            printf("%s WINS!!!\n", res == 0 ? "WHITE" : "BLACK");
+            if(res <= 1){
+                printf("%s WINS!!!\n", res == 0 ? "WHITE" : "BLACK");
+                scores[res]++;
+            }
         }
     } while(input != 'B');
     return 0;
@@ -148,21 +158,28 @@ int playGame(){
         } else if(isCheck(board, kingLocs[player].rank, kingLocs[player].file, player)){
             kingLocs[player].flag = 1;
             printf("CHECK!\n");
+        } else if(isStalemate(board, player)){
+            printf("Stalemate!\n");
+            res = 3;
+            continue;
         } else {
             kingLocs[player].flag = 0;
         }
 
+        printf("Select a piece to move.\n");
+        piece *selected = NULL;
         // Get and validate input
-        printf("Select a piece to move\n");
         move cur = getMoveInput();
         if(cur.file == -1){
             moveRecords = undoMove(moveRecords, board);
             continue;
         }
+        if(isValidTile(cur.rank, cur.file)){
+            selected = board[cur.rank][cur.file];
+        }
 
-        piece *selected = board[cur.rank][cur.file];
         // Check if piece is valid
-        if(isValidTile(cur.rank, cur.file) && selected != NULL && selected->owner == player){
+        if(selected != NULL && selected->owner == player){
             printf("Piece selected: %c\n", selected->rep);
 
             // Get input and validate
@@ -190,7 +207,7 @@ int playGame(){
                 printf("Invalid move.\n");
             }
             free(moves);
-        } else if(isValidTile(cur.rank, cur.file) && selected != NULL && selected->owner != player){
+        } else if(selected != NULL && selected->owner != player){
             printf("You don't own that piece!\n");
         } else {
             printf("Piece not found.\n");
@@ -289,7 +306,6 @@ move checkEnPassant(piece ***board, int rank, int file, int flag){
     int owner = board[rank][file]->owner;
     int dir = (owner == 1) ? -1 : 1;
     if(board[rank][file]->type == Pawn && flag == ENPASSANTER){
-        printf("Captured enemy %c by EN PASSANT!!\n", board[rank + dir][file]->rep);
         res = (move) { rank + dir, file, board[rank + dir][file]->flag };
         free(board[rank + dir][file]);
         board[rank + dir][file] = NULL;
@@ -407,11 +423,12 @@ move *getKingMoves(int rank, int file, piece ***board, int owner, int *cnt){
     }
     // kingLocs[owner].flag represents if the king is in check based on start-of-turn isCheck
     // Castle left
-    if(board[rank][file]->flag == 1 && kingLocs[owner].flag == 0 && board[rank][0]->type == Rook && board[rank][0]->flag == 1 && canCastleRow(rank, file, 1, file - 1, board)){
+    // Checks the king has castle flag, the king is not in check, the rook slot is not empty, the rook slot's occupant is a rook, the rook can castle, and the way to castle is clear
+    if(board[rank][file]->flag == 1 && kingLocs[owner].flag == 0 && (turn % 2) == owner && board[rank][0] != NULL && board[rank][0]->type == Rook && board[rank][0]->flag == 1 && canCastleRow(rank, file, 1, file - 1, board)){
         addPossibleMove(possibleMoves, cnt, rank, file - 2, CASTLE_LEFT);
     }
     // Castle right
-    if(board[rank][file]->flag == 1 && kingLocs[owner].flag == 0 && board[rank][BOARD_SIZE - 1]->type == Rook && board[rank][BOARD_SIZE - 1]->flag == 1 && canCastleRow(rank, file, file + 1, BOARD_SIZE - 2, board)){
+    if(board[rank][file]->flag == 1 && kingLocs[owner].flag == 0 && (turn % 2) == owner && board[rank][0] != NULL && board[rank][BOARD_SIZE - 1]->type == Rook && board[rank][BOARD_SIZE - 1]->flag == 1 && canCastleRow(rank, file, file + 1, BOARD_SIZE - 2, board)){
         addPossibleMove(possibleMoves, cnt, rank, file + 2, CASTLE_RIGHT);
     }
     return possibleMoves;
@@ -460,7 +477,9 @@ void addStraightMoves(int rank, int file, piece ***board, int owner, int *cnt, m
         }
     }
 }
+//}
 
+//{ Game end conditions
 // Returns 1 if the given player is in check
 int isCheck(piece ***board, int rank, int file, int owner){
     int cnt = 0, flag;
@@ -485,6 +504,10 @@ int isCheckmate(piece ***board, int owner){
     if(!isCheck(board, rank, file, owner)){
         return 0;
     }
+    return !hasLegalKingMove(rank, file, board, owner);
+}
+// Returns 1 if the specified king has a valid move
+int hasLegalKingMove(int rank, int file, piece ***board, int owner){
     for(int i = rank - 1; i <= rank + 1; i++){
         for(int j = file - 1; j <= file + 1; j++){
             if(i == rank && j == file){
@@ -492,37 +515,61 @@ int isCheckmate(piece ***board, int owner){
             }
             // King can move to empty space or capture, but only if that move wouldn't be in check.
             if((isValidEmpty(i, j, board) || isEnemyPiece(i, j, owner, board)) && !isSimulatedCheck(board, rank, file, i, j, owner)){
-                printf("%d\n", isSimulatedCheck(board, rank, file, i, j, owner));
-                return 0;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+// TODO: use move piece for this instead
+// Returns 1 if the piece at (curRank, curFile) would be in check if it were moved to (tarRank, tarFile)
+int isSimulatedCheck(piece ***board, int curRank, int curFile, int tarRank, int tarFile, int owner){
+    // Save piece on target tile
+    piece *tmp = 0;
+    if(board[tarRank][tarFile] != NULL){
+        tmp = board[tarRank][tarFile];
+        board[tarRank][tarFile] = NULL;
+    }
+    // Move piece
+    movePiece(board, curRank, curFile, tarRank, tarFile);
+    // Get result
+    int res = isCheck(board, kingLocs[owner].rank, kingLocs[owner].file, owner);
+    // Cleanup
+    movePiece(board, tarRank, tarFile, curRank, curFile);
+    if(tmp != NULL){
+        board[tarRank][tarFile] = tmp;
+    }
+    return res;
+}
+// Returns 1 if the specified player has no legal moves and 0 otherwise
+// Assumes the owner's king is not in check
+int isStalemate(piece ***board, int owner){
+    int cnt = 0;
+    for(int i = 0; i < BOARD_SIZE; i++){
+        for(int j = 0; j < BOARD_SIZE; j++){
+            // Check if non-king ally can move
+            if(isAllyPiece(i, j, owner, board) && board[i][j]->type != King){
+                move *possibleMoves = board[i][j]->getPossibleMoves(i, j, board, owner, &cnt);
+                // A possible move can still be invalid if it would put the king in check
+                for(int k = 0; k < cnt; k++){
+                    int tarRank = possibleMoves[k].rank, tarFile = possibleMoves[k].file;
+                    if(!isSimulatedCheck(board, i, j, tarRank, tarFile, owner)){
+                        free(possibleMoves);
+                        return 0;
+                    }
+                }
+                free(possibleMoves);
+            // Check if ally king has legal moves
+            } else if(isAllyPiece(i, j, owner, board)){
+                int res = hasLegalKingMove(i, j, board, owner);
+                if(res == 1){
+                    return 0;
+                }
             }
         }
     }
     return 1;
-}
-// Returns 1 if the piece at (curRank, curFile) would be in check if it were moved to (tarRank, tarFile)
-int isSimulatedCheck(piece ***board, int curRank, int curFile, int tarRank, int tarFile, int owner){
-    // Remove piece from its current location
-    piece *tmp = board[curRank][curFile];
-    board[curRank][curFile] = NULL;
-    // Only add the removed piece if the target location doesn't already have a piece so target piece isn't lost
-    if(board[tarRank][tarFile] == NULL){
-        board[tarRank][tarFile] = tmp;
-    }
-    // Match owner of target piece
-    // Simulated check will be inaccurate if piece at tarRank, tarFile is an enemy
-    int tarOwner = board[tarRank][tarFile]->owner;
-    board[tarRank][tarFile]->owner = owner;
-
-    // Get result
-    int res = isCheck(board, tarRank, tarFile, owner);
-
-    // Cleanup
-    board[tarRank][tarFile]->owner = tarOwner;
-    if(board[tarRank][tarFile] == tmp){
-        board[tarRank][tarFile] = NULL;
-    }
-    board[curRank][curFile] = tmp;
-    return res;
 }
 //}
 
@@ -541,6 +588,10 @@ int isValidTile(int rank, int file){
 // Checks if a tile is occupied by an enemy's piece
 int isEnemyPiece(int rank, int file, int owner, piece ***board){
     return(isValidTile(rank, file) && board[rank][file] != NULL && board[rank][file]->owner == (owner + 1) % 2);
+}
+// Checks if a tile is occupied by the owner's piece
+int isAllyPiece(int rank, int file, int owner, piece ***board){
+    return(isValidTile(rank, file) && board[rank][file] != NULL && board[rank][file]->owner == owner);
 }
 // Checks if a given tile is on the board and unoccupied
 int isValidEmpty(int rank, int file, piece ***board){
@@ -648,6 +699,11 @@ move getMoveInput(){
     char input[MAX_INPUT] = { 0 };
     char cmd[MAX_INPUT] = { 0 };
     fgets(input, MAX_INPUT * sizeof(char), stdin);
+    // Invalid input
+    if(strlen(input) == 0){
+        return (move) { -99, -99 };
+    }
+
     sscanf(input, "%s", cmd);
     if(strcmp(cmd, "UNDO") == 0){
         return (move) { -1, -1 };
