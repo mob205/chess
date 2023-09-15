@@ -49,6 +49,8 @@ typedef struct moveRecord{
 
 // Function prototypes
 //{
+int playGame();
+
 // Piece movement
 void addPiece(piece temp, piece ***board, int rank, int file, int owner);
 void processMove(piece ***board, int curRank, int curFile, int targetRank, int targetFile, int flag);
@@ -111,15 +113,38 @@ move kingLocs[2];
 
 int main()
 {
+    char input;
+    printf("Welcome to Chess!\n");
+
+    do{
+        printf("A) Play game\n");
+        printf("B) Quit\n");
+
+        clearstdin();
+        input = getchar();
+        if(input == 'A'){
+            int res = playGame();
+            printf("%s WINS!!!\n", res == 0 ? "WHITE" : "BLACK");
+        }
+    } while(input != 'B');
+    return 0;
+}
+// Plays game of chess.
+// Return: White win - 0 | Black win - 1 | Stalemate - 2
+int playGame(){
+    turn = 0;
     piece ***board = makeBoard();
     readyBoard(board);
-    while(1){
+    int res = -1;
+    while(res == -1){
         printBoard(board);
 
         int player = turn % 2;
 
         if(isCheckmate(board, player)){
-            printf("CHECKMATE!!!\n");
+            printf("CHECKMATE! ");
+            res = (player + 1) % 2;
+            continue;
         } else if(isCheck(board, kingLocs[player].rank, kingLocs[player].file, player)){
             kingLocs[player].flag = 1;
             printf("CHECK!\n");
@@ -171,8 +196,8 @@ int main()
             printf("Piece not found.\n");
         }
     }
+    return res;
     freeBoard(board);
-    return 0;
 }
 
 //{ Piece movement
@@ -456,6 +481,7 @@ int isCheck(piece ***board, int rank, int file, int owner){
 // Returns 1 if the given player is in checkmate
 int isCheckmate(piece ***board, int owner){
     int rank = kingLocs[owner].rank, file = kingLocs[owner].file;
+    // Checkmate is not possible if not in check
     if(!isCheck(board, rank, file, owner)){
         return 0;
     }
@@ -464,7 +490,9 @@ int isCheckmate(piece ***board, int owner){
             if(i == rank && j == file){
                 continue;
             }
+            // King can move to empty space or capture, but only if that move wouldn't be in check.
             if((isValidEmpty(i, j, board) || isEnemyPiece(i, j, owner, board)) && !isSimulatedCheck(board, rank, file, i, j, owner)){
+                printf("%d\n", isSimulatedCheck(board, rank, file, i, j, owner));
                 return 0;
             }
         }
@@ -473,16 +501,23 @@ int isCheckmate(piece ***board, int owner){
 }
 // Returns 1 if the piece at (curRank, curFile) would be in check if it were moved to (tarRank, tarFile)
 int isSimulatedCheck(piece ***board, int curRank, int curFile, int tarRank, int tarFile, int owner){
-    // Setup
+    // Remove piece from its current location
     piece *tmp = board[curRank][curFile];
     board[curRank][curFile] = NULL;
+    // Only add the removed piece if the target location doesn't already have a piece so target piece isn't lost
     if(board[tarRank][tarFile] == NULL){
         board[tarRank][tarFile] = tmp;
     }
+    // Match owner of target piece
+    // Simulated check will be inaccurate if piece at tarRank, tarFile is an enemy
+    int tarOwner = board[tarRank][tarFile]->owner;
+    board[tarRank][tarFile]->owner = owner;
+
     // Get result
     int res = isCheck(board, tarRank, tarFile, owner);
 
     // Cleanup
+    board[tarRank][tarFile]->owner = tarOwner;
     if(board[tarRank][tarFile] == tmp){
         board[tarRank][tarFile] = NULL;
     }
