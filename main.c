@@ -113,7 +113,7 @@ const piece pieceTypes[] = {
 };
 int turn = 0;
 moveRecord *moveRecords = NULL;
-move kingLocs[2];
+move kingPos[2];
 
 int main()
 {
@@ -151,14 +151,14 @@ int playGame(){
         int player = turn % 2;
 
         // Cache if king is in check
-        if(isCheck(board, kingLocs[player].rank, kingLocs[player].file, player)){
-            kingLocs[player].flag = 1;
+        if(isCheck(board, kingPos[player].rank, kingPos[player].file, player)){
+            kingPos[player].flag = 1;
         } else {
-            kingLocs[player].flag = 0;
+            kingPos[player].flag = 0;
         }
         if(isStalemate(board, player)){
             // The only difference between a stalemate and a checkmate is whether the king is in check
-            if(kingLocs[player].flag == 1){
+            if(kingPos[player].flag == 1){
                 printf("CHECKMATE!  ");
                 res = (player + 1) % 2;
                 continue;
@@ -168,7 +168,7 @@ int playGame(){
             continue;
         }
 
-        if(kingLocs[player].flag){
+        if(kingPos[player].flag){
             printf("CHECK!\n");
         }
         printf("%s'S TURN: Select a piece to move.\n", player == 0 ? "WHITE" : "BLACK");
@@ -203,7 +203,7 @@ int playGame(){
                 board[tar.rank][tar.file]->flag = flag;
 
                 // Legal moves cannot put the king in check
-                if(isCheck(board, kingLocs[player].rank, kingLocs[player].file, player)){
+                if(isCheck(board, kingPos[player].rank, kingPos[player].file, player)){
                     undoMove(moveRecords, board);
                     printf("Invalid move.\n");
                 }
@@ -261,7 +261,7 @@ void processMove(piece ***board, int curRank, int curFile, int targetRank, int t
     checkCastle(board, targetRank, targetFile, flag);
 
     // Record move on stack
-    move start =(move) { curRank, curFile, board[targetRank][targetFile]->flag };
+    move start = (move) { curRank, curFile, board[targetRank][targetFile]->flag };
     move end = (move) { targetRank, targetFile, flag };
     moveRecords = storeMove(moveRecords, start, end, capturedType, capturedPos, board[targetRank][targetFile]->owner);
 }
@@ -330,8 +330,8 @@ void checkCastle(piece ***board, int rank, int file, int flag){
 // Updates the saved position of each player's king
 void updateKing(int rank, int file, int owner){
     owner = owner % 2;
-    kingLocs[owner].rank = rank;
-    kingLocs[owner].file = file;
+    kingPos[owner].rank = rank;
+    kingPos[owner].file = file;
 }
 //}
 
@@ -430,11 +430,13 @@ move *getKingMoves(int rank, int file, piece ***board, int owner, int *cnt){
     // kingLocs[owner].flag represents if the king is in check based on start-of-turn isCheck
     // Castle left
     // Checks the king has castle flag, the king is not in check, the rook slot is not empty, the rook slot's occupant is a rook, the rook can castle, and the way to castle is clear
-    if(board[rank][file]->flag == 1 && kingLocs[owner].flag == 0 && (turn % 2) == owner && board[rank][0] != NULL && board[rank][0]->type == Rook && board[rank][0]->flag == 1 && canCastleRow(rank, file, 1, file - 1, board)){
+    if(board[rank][file]->flag == 1 && kingPos[owner].flag == 0 && (turn % 2) == owner
+       && board[rank][0] != NULL && board[rank][0]->type == Rook && board[rank][0]->flag == 1 && canCastleRow(rank, file, 1, file - 1, board)){
         addPossibleMove(possibleMoves, cnt, rank, file - 2, CASTLE_LEFT);
     }
     // Castle right
-    if(board[rank][file]->flag == 1 && kingLocs[owner].flag == 0 && (turn % 2) == owner && board[rank][0] != NULL && board[rank][BOARD_SIZE - 1]->type == Rook && board[rank][BOARD_SIZE - 1]->flag == 1 && canCastleRow(rank, file, file + 1, BOARD_SIZE - 2, board)){
+    if(board[rank][file]->flag == 1 && kingPos[owner].flag == 0 && (turn % 2) == owner
+       && board[rank][0] != NULL && board[rank][BOARD_SIZE - 1]->type == Rook && board[rank][BOARD_SIZE - 1]->flag == 1 && canCastleRow(rank, file, file + 1, BOARD_SIZE - 2, board)){
         addPossibleMove(possibleMoves, cnt, rank, file + 2, CASTLE_RIGHT);
     }
     return possibleMoves;
@@ -531,7 +533,7 @@ int isSimulatedCheck(piece ***board, int curRank, int curFile, int tarRank, int 
     // Move piece
     movePiece(board, curRank, curFile, tarRank, tarFile);
     // Get result
-    int res = isCheck(board, kingLocs[owner].rank, kingLocs[owner].file, owner);
+    int res = isCheck(board, kingPos[owner].rank, kingPos[owner].file, owner);
     // Cleanup
     movePiece(board, tarRank, tarFile, curRank, curFile);
     if(tmp != NULL){
@@ -664,7 +666,6 @@ void readyBoard( piece ***board){
 //}
 
 //{ Memory management
-
 // Frees a board, including all pieces on the board
 void freeBoard(piece ***board){
     for(int i = 0; i < BOARD_SIZE; i++){
